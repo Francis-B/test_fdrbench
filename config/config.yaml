@@ -1,0 +1,34 @@
+databases:
+  - human_UP000005640_sp.fasta
+
+datasets:
+  - b1906_293T_proteinID_01A_QE3_122212.raw
+  # - b1922_293T_proteinID_02A_QE3_122212.raw
+  # - b1923_293T_proteinID_03A_QE3_122212.raw
+  # - b1924_293T_proteinID_04A_QE3_122212.raw
+  # - b1925_293T_proteinID_05A_QE3_122212.raw
+  # - b1926_293T_proteinID_06A_QE3_122212.raw
+  # - b1927_293T_proteinID_07A_QE3_122212.raw
+  # - b1928_293T_proteinID_08A_QE3_122212.raw
+  # - b1929_293T_proteinID_09A_QE3_122212.raw
+  # - b1930_293T_proteinID_10A_QE3_122212.raw
+  # - b1931_293T_proteinID_11A_QE3_122212.raw
+  # - b1932_293T_proteinID_12A_QE3_122212.raw
+  # - b1937_293T_proteinID_01B_QE3_122212.raw
+  # - b1938_293T_proteinID_02B_QE3_122212.raw
+  # - b1939_293T_proteinID_03B_QE3_122212.raw
+  # - b1940_293T_proteinID_04B_QE3_122212.raw
+  # - b1941_293T_proteinID_05B_QE3_122212.raw
+  # - b1942_293T_proteinID_06B_QE3_122212.raw
+  # - b1943_293T_proteinID_07B_QE3_122212.raw
+  # - b1944_293T_proteinID_08B_QE3_122212.raw
+  # - b1945_293T_proteinID_09B_QE3_122212.raw
+  # - b1946_293T_proteinID_10B_QE3_122212.raw
+  # - b1947_293T_proteinID_11B_QE3_122212.raw
+  # - b1948_293T_proteinID_12B_QE3_122212.raw
+
+path:
+  crux: ~/Tools/crux-4.2.Linux.x86_64/bin/crux
+  fdrbench: ~/Github/FDRBench/fdrbench-0.0.1/fdrbench-0.0.1.jar
+
+decoy_prefix: DECOY_

@@ -1,0 +1,9 @@
+name: percolator-RESET
+
+channels:
+  - pkgs/main
+
+dependencies:
+  - python=3.10
+  - pip:
+    - https://github.com/freejstone/Percolator-RESET/archive/refs/tags/v0.0.6.tar.gz

@@ -1,0 +1,10 @@
+name:
+  pridepy
+
+channels:
+  - pkgs/main
+
+dependencies:
+  - python=3.11
+  - pip:
+    - pridepy

@@ -1,0 +1,246 @@
+"""
+This pipeline is meant to reproduce the FDP estimation made here
+https://www.biorxiv.org/content/10.1101/2024.06.01.596967v2.full.pdf
+on the HEK293 DDA dataset (PXD001468)
+
+Requirements:
+    - Conda
+    - Singularity
+    - Crux ()
+    - FDRBench
+
+To run:
+    snakemake --cores 20 --use-singularity --use-conda
+
+
+"""
+import os
+
+configfile: "config/config.yaml"
+
+
+rule all:
+    input:
+        expand(
+            "results/search/{database}/{dataset}/FDR_fdrbench.txt",
+            database=[os.path.splitext(f)[0] for f in config["databases"]],
+            dataset=[os.path.splitext(f)[0] for f in config["datasets"]]
+        ),
+        expand(
+            "results/search/{database}/{dataset}/FDR_percolator_filtered.peptides.txt",
+            database=[os.path.splitext(f)[0] for f in config["databases"]],
+            dataset=[os.path.splitext(f)[0] for f in config["datasets"]]
+        )
+
+
+# rule get_raw_data:
+#     """
+#     Download raw files from PRIDE repository.
+#     WARNING: When forcing snakemake to rerun all rules, it will delete raw files.
+#              Comment this rule once the dataset is downloaded.
+#     """
+#     output:
+#         [f"data/raw/{filename}" for filename in config["datasets"]],
+#     params:
+#         outdir="data/raw/",
+#     conda:
+#         "../envs/pridepy.yaml"
+#     shell:
+#         "pridepy download-all-public-raw-files "
+#         "--accession PXD001468 "
+#         "--protocol ftp "
+#         "--output_folder ./data/raw/ "
+#         "--checksum_check"
+
+
+rule raw_to_mzml:
+    " Convert raw files to mzML using msconvert "
+    input:
+        raw="data/raw/{filename}.raw",
+    output:
+        mzml="data/mzml/{filename}.mzML",
+    params:
+        outdir="data/mzml/",
+    singularity:
+        "docker://chambm/pwiz-skyline-i-agree-to-the-vendor-licenses"
+    shell:
+        "wine msconvert "
+        '--filter "peakPicking" '
+        '--filter "zeroSamples removeExtra 1-" '
+        "--mzML "
+        "--outdir {params.outdir} "
+        "{input.raw}"
+
+
+rule generate_entrapment:
+    " Digest database and generate entrapment sequences "
+    input:
+        fasta="data/fasta/{database}.fasta",
+    output:
+        txt="results/database/{database}_entrapment.txt",
+        fasta="results/database/{database}_entrapment.fasta",
+    params:
+        fdrbench=config["path"]["fdrbench"],
+    log:
+        "logs/generate_entrapment_{database}.log",
+    shell:
+        "("
+        "java -jar {params.fdrbench} "
+        "-enzyme 1 "
+        "-fix_nc c "
+        "-level peptide "
+        "-db {input.fasta} "
+        "-o {output.txt} "
+        "-uniprot "
+        "-minLength 7 "
+        "-maxLength 35"
+        ") > {log}"
+
+
+rule generate_index:
+    " Generate decoy sequences and index file for database search "
+    input:
+        fasta="results/database/{database}_entrapment.fasta",
+    output:
+        dir_idx=directory("results/database/{database}_index"),
+        peptides_idx="results/database/{database}_index/pepix",
+        peptides_list="results/database/{database}_index/tide-index.peptides.txt",
+    params:
+        crux=config["path"]["crux"],
+        decoy_prefix=config["decoy_prefix"],
+    log:
+        "logs/generate_index_{database}.log",
+    shell:
+        "("
+        "{params.crux} tide-index "
+        "--min-length 7 "
+        "--max-length 35 "
+        "--custom-enzyme \"{{X}}|{{X}}\" "  # No digestion
+        "--decoy-format shuffle "
+        "--decoy-prefix {params.decoy_prefix} "
+        "--keep-terminal-aminos C "
+        "--peptide-list T "
+        "--output-dir {output.dir_idx} "
+        "{input.fasta} "
+        "{output.dir_idx}"
+        ") > {log}"
+
+
+rule search_database:
+    """
+     Use Tide to perform the database search on each mzML file.
+     All params are the same as in the original paper, except for the fragment
+     tolerance which was not found. 
+    """
+    input:
+        mzml="data/mzml/{dataset}.mzML",
+        idx="results/database/{database}_index/",
+    output:
+        target="results/search/{database}/{dataset}/tide-search.target.txt",
+        decoy="results/search/{database}/{dataset}/tide-search.decoy.txt",
+    params:
+        dir_=directory("results/search/{database}/{dataset}"),
+        crux=config["path"]["crux"],
+    log:
+        "logs/search_database_{database}_{dataset}.log",
+    shell:
+        "("
+        "{params.crux} tide-search "
+        "--use-tailor-calibration T "
+        "--compute-sp T "
+        "--precursor-window 20 "
+        "--precursor-window-type ppm "
+        "--mz-bin-offset 0 "
+        "--output-dir {params.dir_} "
+        "{input.mzml} "
+        "{input.idx}"
+        ") > {log}"
+
+
+rule make_pin:
+    " Convert the search results into pin format for percolator-RESET "
+    input:
+        expand(
+                "results/search/{{database}}/{{dataset}}/tide-search.{type_}.txt",
+                type_=["target", "decoy"]
+        ),
+    output:
+        pin="results/search/{database}/{dataset}/tide-search.pin",
+    params:
+        crux=config["path"]["crux"],
+        decoy_prefix=config["decoy_prefix"],
+        dir_=directory("results/search/{database}/{dataset}/"),
+        filename = lambda wildcards, output: os.path.basename(output["pin"])
+    shell:
+        "{params.crux} make-pin "
+        "--decoy-prefix {params.decoy_prefix} "
+        "--output-dir {params.dir_} "
+        "--output-file {params.filename} "
+        "--overwrite T "
+        "{input}"
+
+
+rule run_percolator:
+    " Run percolator-RESET to post-process the search results and estimate FDR "
+    input:
+        search="results/search/{database}/{dataset}/tide-search.pin",
+        peptides="results/database/{database}_index/tide-index.peptides.txt",
+    output:
+        file_="results/search/{database}/{dataset}/FDR_percolator.peptides.txt",
+    params:
+        dir_=directory("results/search/{database}/{dataset}/"),
+    log:
+        "logs/run_percolator_{database}_{dataset}.log",
+    conda:
+        "../envs/percolator-RESET.yaml"
+    shell:
+        "("
+        "python -m percolator_RESET "
+        "--FDR_threshold 0.1 "
+        "--initial_dir tailor "
+        "--overwrite T "
+        "--output_dir {params.dir_} "
+        "{input.search} "
+        "{input.peptides}"
+        ") > {log}"
+
+
+rule filter_percolator_output:
+    " Filter out percolator output's columns which are not needed for FDRbench "
+    input:
+        percolator="results/search/{database}/{dataset}/FDR_percolator.peptides.txt",
+    output:
+        "results/search/{database}/{dataset}/FDR_percolator_filtered.peptides.txt",
+    shell:
+        """
+        awk '
+        BEGIN {{ OFS = "\t"; {{print "peptide", "proteins", "q_value", "TailorScore"}} }}
+        NR==1 {{
+            for (i=1; i<=NF; i++) {{
+                f[$i] = i
+            }}
+        }}
+        NR > 1 {{
+        {{ print $(f["Peptide"]), $(f["Proteins"]), $(f["q_val"]), $(f["TailorScore"]) }}
+        }}
+        ' {input.percolator} > {output}
+        """
+
+
+rule calculate_fdp:
+    " Run FDRbench on the percolator output to estimate FDP "
+    input:
+        percolator="results/search/{database}/{dataset}/FDR_percolator_filtered.peptides.txt",
+        pairs="results/database/{database}_entrapment.txt",
+    output:
+        fdp="results/search/{database}/{dataset}/FDR_fdrbench.txt",
+    params:
+        fdrbench=config["path"]["fdrbench"],
+    shell:
+        "java -jar {params.fdrbench} "
+        "-i {input.percolator} "
+        "-fold 1 "
+        "-pep {input.pairs} "
+        "-level peptide "
+        "-o {output.fdp} "
+        "-score \"TailorScore:1\""

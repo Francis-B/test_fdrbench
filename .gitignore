@@ -1,0 +1,8 @@
+data/mzml/**
+data/raw/**
+logs/**
+results/**
+results_bak/
+
+.snakemake/
+.vscode/
