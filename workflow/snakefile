@@ -136,8 +136,7 @@ rule search_database:
         mzml="data/mzml/{dataset}.mzML",
         idx="results/database/{database}_index/",
     output:
-        target="results/search/{database}/{dataset}/tide-search.target.txt",
-        decoy="results/search/{database}/{dataset}/tide-search.decoy.txt",
+        "results/search/{database}/{dataset}/tide-search.txt",
     params:
         dir_=directory("results/search/{database}/{dataset}"),
         crux=config["path"]["crux"],
@@ -148,6 +147,7 @@ rule search_database:
         "{params.crux} tide-search "
         "--use-tailor-calibration T "
         "--compute-sp T "
+        "--concat T "
         "--precursor-window 20 "
         "--precursor-window-type ppm "
         "--mz-bin-offset 0 "
@@ -160,10 +160,7 @@ rule search_database:
 rule make_pin:
     " Convert the search results into pin format for percolator-RESET "
     input:
-        expand(
-                "results/search/{{database}}/{{dataset}}/tide-search.{type_}.txt",
-                type_=["target", "decoy"]
-        ),
+        "results/search/{database}/{dataset}/tide-search.txt",
     output:
         pin="results/search/{database}/{dataset}/tide-search.pin",
     params:
